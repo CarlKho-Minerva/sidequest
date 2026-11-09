@@ -1,0 +1,11 @@
+.venv/
+.git/
+models/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+tests/
+.github/
+.gitar/
+deploy/

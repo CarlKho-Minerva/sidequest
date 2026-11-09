@@ -27,9 +27,7 @@ from opentelemetry import trace
 
 tracer = trace.get_tracer("sidequest.ingest")
 
-SCHEDULE_URL = (
-    "https://events.linuxfoundation.org/kubecon-cloudnativecon-north-america/program/schedule/"
-)
+SCHEDULE_URL = "https://events.linuxfoundation.org/kubecon-cloudnativecon-north-america/program/schedule/"
 LUMA_FEED_URL = (
     "https://api.lu.ma/calendar/get-items?calendar_api_id=cal-trgXrvZoNlgsdyT"
     "&period=future&pagination_limit=100"
@@ -101,7 +99,9 @@ def parse_schedule(html: str) -> list[Talk]:
         end = times[1].get("datetime", "") if len(times) > 1 else ""
         desc = node.select_one(".sess__seodesc")
         abstract = _text(desc)
-        venue = room.split("|")[0].strip() if "|" in room else ("Off-Site Location" if "Off-Site" in room else "")
+        venue = (
+            room.split("|")[0].strip() if "|" in room else ("Off-Site Location" if "Off-Site" in room else "")
+        )
         if not title or not start:
             continue
         talks.append(
@@ -154,9 +154,9 @@ def fetch_side_events(client: httpx.Client) -> list[SideEvent]:
     for entry in _luma_pages(client):
         e = entry["event"]
         geo = e.get("geo_address_info") or {}
-        location = ", ".join(
-            x for x in [geo.get("address"), geo.get("city_state")] if x
-        ) or (geo.get("full_address") or "")
+        location = ", ".join(x for x in [geo.get("address"), geo.get("city_state")] if x) or (
+            geo.get("full_address") or ""
+        )
         ticket = entry.get("ticket_info") or {}
         hosts = [h.get("name", "") for h in (entry.get("hosts") or []) if h.get("name")]
         events.append(
@@ -197,7 +197,11 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError:
         pass
     with httpx.Client() as client:
-        html = args.schedule_html.read_text(encoding="utf-8", errors="ignore") if args.schedule_html else fetch_schedule(client)
+        html = (
+            args.schedule_html.read_text(encoding="utf-8", errors="ignore")
+            if args.schedule_html
+            else fetch_schedule(client)
+        )
         talks = parse_schedule(html)
         write_json(args.out / "talks.json", talks)
         days = sorted({t.day for t in talks})
