@@ -33,3 +33,12 @@ def test_why_names_the_matching_interest_or_falls_back_to_the_track():
     assert _why({"title": "x", "track": "Observability", "tags": [], "text": ""}, ["wasm"]).startswith(
         "Close in meaning"
     )
+
+
+def test_energy_comes_from_the_profile_and_defaults_to_normal():
+    from sidequest.api import _energy
+
+    assert _energy(PROFILE) == "low"
+    assert _energy("energy: HIGH\ntopics:\n- x") == "high"
+    assert _energy("Kueue and batch scheduling") == "normal"
+    assert _energy("energy: frantic") == "normal"
