@@ -142,6 +142,15 @@ def _interest_lines(text: str) -> list[str]:
     return lines or [text.strip()]
 
 
+def _energy(text: str) -> str:
+    """The profile's energy line (low, normal, high); free text without one means normal."""
+    for raw in text.splitlines():
+        key, sep, val = raw.strip().partition(":")
+        if sep and key.strip().lower() == "energy" and val.strip().lower() in {"low", "normal", "high"}:
+            return val.strip().lower()
+    return "normal"
+
+
 def _avoid_terms(text: str) -> list[str]:
     section, terms = "", []
     for raw in text.splitlines():
@@ -221,6 +230,7 @@ def api_plan(req: PlanRequest) -> dict[str, Any]:
         span.set_attribute("sidequest.day", req.day)
         span.set_attribute("sidequest.phrases", len(phrases))
         span.set_attribute("sidequest.simplify", req.simplify)
+        span.set_attribute("sidequest.energy", _energy(req.interests))
 
         # One hybrid search per phrase, merged by best score, so a narrow interest is not drowned by a broad one.
         merged: dict[str, dict] = {}
@@ -236,7 +246,13 @@ def api_plan(req: PlanRequest) -> dict[str, Any]:
         candidates: list[Candidate] = [c for c in (candidate_from_hit(h) for h in merged.values()) if c]
 
         with tracer.start_as_current_span("plan.schedule"):
-            plan = plan_day(candidates, day=day, quiet_break=req.quiet_break, simplify=req.simplify)
+            plan = plan_day(
+                candidates,
+                day=day,
+                quiet_break=req.quiet_break,
+                simplify=req.simplify,
+                energy=_energy(req.interests),
+            )
         for item in plan.items:
             if item.type == "talk":
                 item.why = _why(merged[item.id], phrases)
