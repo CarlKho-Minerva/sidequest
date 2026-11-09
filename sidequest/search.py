@@ -25,6 +25,9 @@ from pathlib import Path
 from typing import Any
 
 from elasticsearch import Elasticsearch, helpers
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
 
 INDEX = "sidequest-items"
 EMBED_DIM = 384
@@ -132,11 +135,15 @@ def build_index(client: Elasticsearch, data_dir: Path = DATA_DIR) -> int:
     vectors = embed([embedding_text(d) for d in docs])
     for d, v in zip(docs, vectors, strict=True):
         d["embedding"] = v
-    if client.indices.exists(index=INDEX):
-        client.indices.delete(index=INDEX)
-    client.indices.create(index=INDEX, **MAPPING)
-    actions = ({"_index": INDEX, **d} for d in docs)
-    ok, _ = helpers.bulk(client, actions, refresh="wait_for")
+    with tracer.start_as_current_span("search.index_rebuild") as span:
+        span.set_attribute("sidequest.documents", len(docs))
+        if client.indices.exists(index=INDEX):
+            client.indices.delete(index=INDEX)
+        client.indices.create(index=INDEX, **MAPPING)
+        actions = ({"_index": INDEX, **d} for d in docs)
+        with tracer.start_as_current_span("search.bulk_index") as bulk_span:
+            ok, _ = helpers.bulk(client, actions, refresh="wait_for")
+            bulk_span.set_attribute("sidequest.documents_indexed", ok)
     return ok
 
 
@@ -152,7 +159,14 @@ def hybrid_search(
     """Keyword + vector search fused with reciprocal rank fusion. Returns hits with a ``score`` field."""
     filters: list[dict] = [{"terms": {"kind": list(kinds)}}]
     if day:
-        filters.append({"term": {"day": day}})
+        filters.append(
+            {
+                "bool": {
+                    "should": [{"term": {"day": day}}, {"term": {"kind": "side_event"}}],
+                    "minimum_should_match": 1,
+                }
+            }
+        )
     if exclude_sold_out:
         filters.append({"term": {"sold_out": False}})
     vector = embed([query])[0]
@@ -187,7 +201,9 @@ def hybrid_search(
         "size": k,
         "_source": {"excludes": ["embedding"]},
     }
-    res = client.search(index=INDEX, **body)
+    with tracer.start_as_current_span("search.hybrid_search") as span:
+        span.set_attribute("sidequest.k", k)
+        res = client.search(index=INDEX, **body)
     hits = []
     for h in res["hits"]["hits"]:
         src = h["_source"]

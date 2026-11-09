@@ -8,7 +8,7 @@ Rules (each one has a test in tests/test_planner.py):
 1. Greedy by relevance: walk candidates from best to worst score, keep a talk when it fits.
 2. A talk fits when it does not overlap any kept talk once a buffer is added between them. The buffer is
    15 minutes, stretched by how far apart the two rooms are: same building and level adds nothing, a
-   different level adds 5, a different building adds 10, anything off-site adds 20.
+   different level adds 5, a different building adds 10, anything off-site adds 20, and side events add 10.
 3. A rejected talk that overlapped a kept one is remembered as that talk's alternative, so a clash is
    shown with its other option instead of silently disappearing.
 4. One quiet break per half day (before and after 12:30): the longest free gap of at least 30 minutes
@@ -21,8 +21,10 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 BASE_BUFFER_MIN = 15
+VENUE_TZ = ZoneInfo("America/Denver")
 MIN_BREAK_MIN = 30
 MIDDAY = (12, 30)
 
@@ -110,8 +112,9 @@ class Plan:
 
 
 def travel_minutes(a: Candidate, b: Candidate) -> int:
-    """Extra minutes needed to walk from a's room to b's room. In words: same room, no walk; a different
-    floor, a short walk; a different building, a real walk; off-site, a trip."""
+    """Extra minutes needed to travel between items. Side events add 10; off-site talks add 20."""
+    if a.kind == "side_event" or b.kind == "side_event":
+        return 10
     if "Off-Site" in a.venue or "Off-Site" in b.venue:
         return 20
     if a.venue != b.venue:
@@ -156,11 +159,6 @@ def choose(
             alternatives.setdefault(blocker.id, []).append(c)
     kept.sort(key=lambda c: (c.start, c.id))
     return kept, alternatives
-
-
-def _half(c: Candidate, day: datetime) -> int:
-    midday = day.replace(hour=MIDDAY[0], minute=MIDDAY[1], second=0, microsecond=0)
-    return 0 if c.start < midday else 1
 
 
 def _longest_gap(
@@ -209,10 +207,10 @@ def plan_day(
         start = day0.replace(hour=day_start[0], minute=day_start[1])
         midday = day0.replace(hour=MIDDAY[0], minute=MIDDAY[1])
         end = day0.replace(hour=day_end[0], minute=day_end[1])
-        for half, window in enumerate([(start, midday), (midday, end)]):
+        for window in [(start, midday), (midday, end)]:
             gap = _longest_gap(kept, window)
             if gap is None:
-                in_half = [c for c in kept if _half(c, day0) == half]
+                in_half = [c for c in kept if c.start < window[1] and c.end > window[0]]
                 if in_half:
                     victim = min(in_half, key=lambda c: (c.score, c.start, c.id))
                     kept.remove(victim)
@@ -261,15 +259,17 @@ def plan_day(
     return Plan(items=items, considered=len(todays), dropped_for_break=dropped)
 
 
+def _local(value: str) -> datetime:
+    dt = datetime.fromisoformat(value)
+    return dt.astimezone(VENUE_TZ).replace(tzinfo=None) if dt.tzinfo else dt
+
+
 def candidate_from_hit(hit: dict) -> Candidate | None:
     """Turn an Elasticsearch hit (see search.py) into a Candidate. Items without an end get 30 minutes."""
     if not hit.get("start"):
         return None
-    start = datetime.fromisoformat(hit["start"])
-    end = datetime.fromisoformat(hit["end"]) if hit.get("end") else start + timedelta(minutes=30)
-    if start.tzinfo is not None:
-        start = start.replace(tzinfo=None)
-        end = end.replace(tzinfo=None)
+    start = _local(hit["start"])
+    end = _local(hit["end"]) if hit.get("end") else start + timedelta(minutes=30)
     return Candidate(
         id=hit["id"],
         title=hit["title"],
