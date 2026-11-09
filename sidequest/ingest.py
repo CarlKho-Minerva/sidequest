@@ -190,9 +190,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, default=DATA_DIR)
     args = ap.parse_args(argv)
 
-    from sidequest.telemetry import setup_telemetry
+    try:  # exports only when OTEL_EXPORTER_OTLP_ENDPOINT is set; the module lands in the next PR
+        from sidequest.telemetry import setup_telemetry
 
-    setup_telemetry("sidequest-ingest")  # exports only when OTEL_EXPORTER_OTLP_ENDPOINT is set
+        setup_telemetry("sidequest-ingest")
+    except ImportError:
+        pass
     with httpx.Client() as client:
         html = args.schedule_html.read_text(encoding="utf-8", errors="ignore") if args.schedule_html else fetch_schedule(client)
         talks = parse_schedule(html)
