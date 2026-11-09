@@ -23,6 +23,9 @@ from pathlib import Path
 
 import httpx
 from bs4 import BeautifulSoup
+from opentelemetry import trace
+
+tracer = trace.get_tracer("sidequest.ingest")
 
 SCHEDULE_URL = (
     "https://events.linuxfoundation.org/kubecon-cloudnativecon-north-america/program/schedule/"
@@ -121,20 +124,34 @@ def parse_schedule(html: str) -> list[Talk]:
 
 
 def fetch_schedule(client: httpx.Client) -> str:
-    r = client.get(SCHEDULE_URL, headers={"User-Agent": USER_AGENT}, timeout=60, follow_redirects=True)
-    r.raise_for_status()
-    return r.text
+    with tracer.start_as_current_span("ingest.fetch_schedule"):
+        r = client.get(SCHEDULE_URL, headers={"User-Agent": USER_AGENT}, timeout=60, follow_redirects=True)
+        r.raise_for_status()
+        return r.text
+
+
+def _luma_pages(client: httpx.Client, max_pages: int = 20):
+    """Yield every entry of the Luma calendar, following ``pagination_cursor`` while ``has_more`` is set."""
+    url = LUMA_FEED_URL
+    for _ in range(max_pages):
+        with tracer.start_as_current_span("ingest.fetch_luma_page"):
+            r = client.get(url, headers={"User-Agent": USER_AGENT}, timeout=30)
+            r.raise_for_status()
+            payload = r.json()
+        if "entries" not in payload:
+            # Luma answers {"message": "You've exceeded our rate limit..."} when polled too often.
+            raise RuntimeError(f"Luma feed had no entries: {str(payload)[:200]}")
+        yield from payload["entries"]
+        cursor = payload.get("next_cursor")
+        if not payload.get("has_more") or not cursor:
+            return
+        url = f"{LUMA_FEED_URL}&pagination_cursor={cursor}"
+    print("luma: stopped after the page limit; the calendar is longer than expected", file=sys.stderr)
 
 
 def fetch_side_events(client: httpx.Client) -> list[SideEvent]:
-    r = client.get(LUMA_FEED_URL, headers={"User-Agent": USER_AGENT}, timeout=30)
-    r.raise_for_status()
-    payload = r.json()
-    if "entries" not in payload:
-        # Luma answers {"message": "You've exceeded our rate limit..."} when polled too often.
-        raise RuntimeError(f"Luma feed had no entries: {str(payload)[:200]}")
     events: list[SideEvent] = []
-    for entry in payload["entries"]:
+    for entry in _luma_pages(client):
         e = entry["event"]
         geo = e.get("geo_address_info") or {}
         location = ", ".join(
@@ -173,6 +190,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, default=DATA_DIR)
     args = ap.parse_args(argv)
 
+    from sidequest.telemetry import setup_telemetry
+
+    setup_telemetry("sidequest-ingest")  # exports only when OTEL_EXPORTER_OTLP_ENDPOINT is set
     with httpx.Client() as client:
         html = args.schedule_html.read_text(encoding="utf-8", errors="ignore") if args.schedule_html else fetch_schedule(client)
         talks = parse_schedule(html)
