@@ -32,3 +32,7 @@ packages = ["sidequest"]
 
 [tool.ruff]
 line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "RUF"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003", "B008"]

@@ -7,7 +7,16 @@ DAY = datetime(2026, 11, 10)
 
 def talk(id, h, m, dur, room="Salt Palace | Level 2 | 250", score=1.0, title=None):
     start = DAY.replace(hour=h, minute=m)
-    return Candidate(id=id, title=title or f"Talk {id}", start=start, end=start.replace(minute=0) + (start - start.replace(minute=0)) + __import__("datetime").timedelta(minutes=dur), room=room, score=score)
+    return Candidate(
+        id=id,
+        title=title or f"Talk {id}",
+        start=start,
+        end=start.replace(minute=0)
+        + (start - start.replace(minute=0))
+        + __import__("datetime").timedelta(minutes=dur),
+        room=room,
+        score=score,
+    )
 
 
 def test_buffer_stretches_with_distance():
@@ -43,7 +52,12 @@ def test_choose_is_deterministic_on_ties():
 
 
 def test_plan_day_adds_one_break_per_half_day():
-    cands = [talk("a", 9, 0, 30, score=0.9), talk("b", 10, 30, 30, score=0.8), talk("c", 14, 0, 30, score=0.7), talk("d", 16, 0, 30, score=0.6)]
+    cands = [
+        talk("a", 9, 0, 30, score=0.9),
+        talk("b", 10, 30, 30, score=0.8),
+        talk("c", 14, 0, 30, score=0.7),
+        talk("d", 16, 0, 30, score=0.6),
+    ]
     plan = plan_day(cands, day=DAY)
     breaks = [i for i in plan.items if i.type == "break"]
     assert len(breaks) == 2
@@ -68,7 +82,14 @@ def test_simplify_keeps_three_in_time_order():
 
 
 def test_plan_day_ignores_other_days():
-    other = Candidate(id="x", title="x", start=datetime(2026, 11, 11, 9), end=datetime(2026, 11, 11, 9, 30), room="", score=1.0)
+    other = Candidate(
+        id="x",
+        title="x",
+        start=datetime(2026, 11, 11, 9),
+        end=datetime(2026, 11, 11, 9, 30),
+        room="",
+        score=1.0,
+    )
     plan = plan_day([other, talk("a", 9, 0, 30)], day=DAY)
     assert [i.id for i in plan.talks] == ["a"]
     assert plan.considered == 1
