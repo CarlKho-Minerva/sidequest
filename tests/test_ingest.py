@@ -32,4 +32,9 @@ def test_parse_schedule_reads_one_session_with_day_times_and_people():
 
 
 def test_parse_schedule_skips_cards_without_a_time():
-    assert parse_schedule('<div class="sess-wrap"><a class="sess-link"></a><div class="sess__title">x</div></div>') == []
+    assert (
+        parse_schedule(
+            '<div class="sess-wrap"><a class="sess-link"></a><div class="sess__title">x</div></div>'
+        )
+        == []
+    )
