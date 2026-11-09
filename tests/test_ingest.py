@@ -56,3 +56,12 @@ def test_side_event_day_and_room_follow_the_venue_clock():
     assert doc["day"] == "Tuesday November 10"
     assert doc["room"] == "Off-Site Location | Sky SLC, Salt Lake City, UT"
     assert doc["venue"] == "Off-Site Location"
+
+
+def test_rrf_fuse_rewards_items_near_the_top_of_both_lists():
+    from sidequest.search import rrf_fuse
+
+    fused = rrf_fuse([["a", "b", "c"], ["b", "a", "d"]])
+    assert [i for i, _ in fused][:2] == ["a", "b"]  # both appear in both lists, a slightly ahead
+    assert fused[0][1] > fused[2][1]
+    assert [i for i, _ in fused] == ["a", "b", "c", "d"]

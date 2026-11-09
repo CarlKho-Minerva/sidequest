@@ -66,6 +66,17 @@ except Exception as exc:  # pragma: no cover
 _es = None
 
 
+@app.on_event("startup")
+def warm_up() -> None:
+    """Load the embedding model before the first request. Agent0 showed the first plan of a process taking
+    2.9 s against 0.2 s warm; that cold start was the model loading inside the request."""
+    with tracer.start_as_current_span("startup.warm_embedder"):
+        try:
+            search.embed(["warm up"])
+        except Exception as exc:
+            log.warning("embedder warm-up skipped: %s", exc)
+
+
 def es():
     global _es
     if _es is None:

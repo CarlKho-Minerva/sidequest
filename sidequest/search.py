@@ -26,12 +26,13 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from elasticsearch import Elasticsearch, helpers
+from elasticsearch import AuthorizationException, Elasticsearch, helpers
 from opentelemetry import trace
 
 tracer = trace.get_tracer(__name__)
 
 INDEX = "sidequest-items"
+RRF_K = 60
 VENUE_TZ = ZoneInfo("America/Denver")
 EMBED_DIM = 384
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -212,20 +213,49 @@ def hybrid_search(
         }
     }
     body = {
-        "retriever": {"rrf": {"retrievers": [keyword, knn], "rank_window_size": k * 3, "rank_constant": 60}},
+        "retriever": {
+            "rrf": {"retrievers": [keyword, knn], "rank_window_size": k * 3, "rank_constant": RRF_K}
+        },
         "size": k,
         "_source": {"excludes": ["embedding"]},
     }
     with tracer.start_as_current_span("search.hybrid_search") as span:
         span.set_attribute("sidequest.k", k)
-        res = client.search(index=INDEX, **body)
+        try:
+            res = client.search(index=INDEX, **body)
+            ranked = [(h["_id"], h["_source"], h.get("_score") or 0.0) for h in res["hits"]["hits"]]
+            span.set_attribute("sidequest.fusion", "elasticsearch-rrf")
+        except AuthorizationException as exc:
+            # A Basic licence has no server-side RRF. Same idea, done here: two searches, fused by rank.
+            if "Reciprocal Rank Fusion" not in str(exc):
+                raise
+            span.set_attribute("sidequest.fusion", "client-rrf")
+            ranked = _client_side_rrf(client, keyword["standard"]["query"], knn["knn"], k)
     hits = []
-    for h in res["hits"]["hits"]:
-        src = h["_source"]
-        src["id"] = h["_id"]
-        src["score"] = h.get("_score") or 0.0
+    for _id, src, score in ranked:
+        src["id"] = _id
+        src["score"] = score
         hits.append(src)
     return hits
+
+
+def rrf_fuse(rankings: list[list[str]], k: int = RRF_K) -> list[tuple[str, float]]:
+    """Reciprocal rank fusion. In words: each list votes 1/(k + position) for every item it holds, and
+    items are ordered by the sum of their votes, so something near the top of both lists wins."""
+    scores: dict[str, float] = {}
+    for ranking in rankings:
+        for pos, _id in enumerate(ranking, start=1):
+            scores[_id] = scores.get(_id, 0.0) + 1.0 / (k + pos)
+    return sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def _client_side_rrf(client: Elasticsearch, query: dict, knn: dict, k: int) -> list[tuple[str, dict, float]]:
+    window = k * 3
+    kw = client.search(index=INDEX, query=query, size=window, _source={"excludes": ["embedding"]})
+    vec = client.search(index=INDEX, knn=knn, size=window, _source={"excludes": ["embedding"]})
+    sources = {h["_id"]: h["_source"] for h in kw["hits"]["hits"] + vec["hits"]["hits"]}
+    fused = rrf_fuse([[h["_id"] for h in kw["hits"]["hits"]], [h["_id"] for h in vec["hits"]["hits"]]])
+    return [(_id, sources[_id], score) for _id, score in fused[:k]]
 
 
 def main(argv: list[str] | None = None) -> int:
