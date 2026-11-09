@@ -133,7 +133,7 @@ def build_index(client: Elasticsearch, data_dir: Path = DATA_DIR) -> int:
     events = json.loads(events_path.read_text()) if events_path.exists() else []
     docs = [_talk_doc(t) for t in talks] + [_side_event_doc(e) for e in events]
     vectors = embed([embedding_text(d) for d in docs])
-    for d, v in zip(docs, vectors):
+    for d, v in zip(docs, vectors, strict=True):
         d["embedding"] = v
     with tracer.start_as_current_span("search.index_rebuild") as span:
         span.set_attribute("sidequest.documents", len(docs))

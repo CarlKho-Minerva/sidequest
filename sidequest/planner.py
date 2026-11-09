@@ -18,9 +18,9 @@ Rules (each one has a test in tests/test_planner.py):
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from itertools import pairwise
 from zoneinfo import ZoneInfo
 
 BASE_BUFFER_MIN = 15
@@ -44,7 +44,11 @@ class Candidate:
 
     @property
     def venue(self) -> str:
-        return self.room.split("|")[0].strip() if "|" in self.room else ("Off-Site" if "Off-Site" in self.room else self.room)
+        return (
+            self.room.split("|")[0].strip()
+            if "|" in self.room
+            else ("Off-Site" if "Off-Site" in self.room else self.room)
+        )
 
     @property
     def level(self) -> str:
@@ -137,7 +141,9 @@ def _sort_key(c: Candidate):
     return (-c.score, c.start, c.id)
 
 
-def choose(candidates: list[Candidate], *, max_items: int | None = None) -> tuple[list[Candidate], dict[str, list[Candidate]]]:
+def choose(
+    candidates: list[Candidate], *, max_items: int | None = None
+) -> tuple[list[Candidate], dict[str, list[Candidate]]]:
     kept: list[Candidate] = []
     alternatives: dict[str, list[Candidate]] = {}
     for c in sorted(candidates, key=_sort_key):
@@ -155,13 +161,17 @@ def choose(candidates: list[Candidate], *, max_items: int | None = None) -> tupl
     return kept, alternatives
 
 
-def _longest_gap(kept: list[Candidate], window: tuple[datetime, datetime]) -> tuple[datetime, datetime] | None:
+def _longest_gap(
+    kept: list[Candidate], window: tuple[datetime, datetime]
+) -> tuple[datetime, datetime] | None:
     """Longest free stretch inside the window, at least MIN_BREAK_MIN long, else None."""
-    points = [window[0]] + [t for c in kept for t in (c.start, c.end) if window[0] <= t <= window[1]] + [window[1]]
+    points = (
+        [window[0]] + [t for c in kept for t in (c.start, c.end) if window[0] <= t <= window[1]] + [window[1]]
+    )
     busy = [(c.start, c.end) for c in kept]
     best: tuple[datetime, datetime] | None = None
     points = sorted(set(points))
-    for a, b in pairwise(points):
+    for a, b in itertools.pairwise(points):
         mid = a + (b - a) / 2
         if any(s <= mid < e for s, e in busy):
             continue
@@ -209,7 +219,15 @@ def plan_day(
             if gap is not None:
                 b_start = gap[0] + timedelta(minutes=5) if gap[0] != window[0] else gap[0]
                 b_end = min(gap[1], b_start + timedelta(minutes=30))
-                items.append(PlanItem(type="break", start=b_start, end=b_end, title="Quiet break", why="A gap kept on purpose."))
+                items.append(
+                    PlanItem(
+                        type="break",
+                        start=b_start,
+                        end=b_end,
+                        title="Quiet break",
+                        why="A gap kept on purpose.",
+                    )
+                )
 
     for c in kept:
         alts = sorted(alternatives.get(c.id, []), key=_sort_key)[:2]
@@ -226,7 +244,13 @@ def plan_day(
                 score=c.score,
                 speakers=c.speakers,
                 alternatives=[
-                    {"id": a.id, "title": a.title, "start": a.start.isoformat(), "end": a.end.isoformat(), "room": a.room}
+                    {
+                        "id": a.id,
+                        "title": a.title,
+                        "start": a.start.isoformat(),
+                        "end": a.end.isoformat(),
+                        "room": a.room,
+                    }
                     for a in alts
                 ],
             )
