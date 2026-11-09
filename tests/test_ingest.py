@@ -38,3 +38,21 @@ def test_parse_schedule_skips_cards_without_a_time():
         )
         == []
     )
+
+
+def test_side_event_day_and_room_follow_the_venue_clock():
+    from sidequest.search import _side_event_doc, side_event_day
+
+    # 02:30 UTC on 11 November is 19:30 on Tuesday 10 November in Salt Lake City.
+    assert side_event_day("2026-11-11T02:30:00.000Z") == "Tuesday November 10"
+    doc = _side_event_doc(
+        {
+            "id": "x",
+            "name": "Party",
+            "start": "2026-11-11T02:30:00.000Z",
+            "location": "Sky SLC, Salt Lake City, UT",
+        }
+    )
+    assert doc["day"] == "Tuesday November 10"
+    assert doc["room"] == "Off-Site Location | Sky SLC, Salt Lake City, UT"
+    assert doc["venue"] == "Off-Site Location"

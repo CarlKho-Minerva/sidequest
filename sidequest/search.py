@@ -20,11 +20,15 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from elasticsearch import Elasticsearch, helpers
+
+VENUE_TZ = ZoneInfo("America/Denver")
 from opentelemetry import trace
 
 tracer = trace.get_tracer(__name__)
@@ -102,7 +106,18 @@ def _talk_doc(t: dict) -> dict:
     }
 
 
+def side_event_day(start_iso: str) -> str:
+    """Luma sends UTC; the day name is the venue's local day, in the same form as the talks ("Tuesday November 10")."""
+    try:
+        dt = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    local = dt.astimezone(VENUE_TZ) if dt.tzinfo else dt
+    return f"{local:%A} {local:%B} {local.day}"
+
+
 def _side_event_doc(e: dict) -> dict:
+    location = e.get("location") or ""
     return {
         "_id": f"side-{e['id']}",
         "kind": "side_event",
@@ -111,12 +126,13 @@ def _side_event_doc(e: dict) -> dict:
         "speakers": e.get("hosts") or [],
         "track": "Side event",
         "tags": ["Side event"],
-        "day": "",
+        "day": side_event_day(e["start"]),
         "start": e["start"],
         "end": e.get("end") or None,
-        "room": "",
-        "venue": "",
-        "location": e.get("location") or "",
+        # Side events are off-site by definition, so the planner's travel buffer treats them as a trip.
+        "room": f"Off-Site Location | {location}" if location else "Off-Site Location",
+        "venue": "Off-Site Location",
+        "location": location,
         "url": e.get("url") or "",
         "sold_out": bool(e.get("sold_out")),
     }
