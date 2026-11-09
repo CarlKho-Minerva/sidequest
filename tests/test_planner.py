@@ -1,6 +1,14 @@
 from datetime import datetime
 
-from sidequest.planner import Candidate, choose, fits, plan_day, required_gap, travel_minutes
+from sidequest.planner import (
+    Candidate,
+    candidate_from_hit,
+    choose,
+    fits,
+    plan_day,
+    required_gap,
+    travel_minutes,
+)
 
 DAY = datetime(2026, 11, 10)
 
@@ -16,7 +24,33 @@ def test_buffer_stretches_with_distance():
     assert travel_minutes(a, talk("c", 10, 0, 30, room="Salt Palace | Level 1 | Hall D")) == 5
     assert travel_minutes(a, talk("d", 10, 0, 30, room="Hyatt Regency | Level 4 | Regency Ballroom")) == 10
     assert travel_minutes(a, talk("e", 10, 0, 30, room="Off-Site Location")) == 20
+    side_event = Candidate(
+        id="side-event",
+        title="Side event",
+        start=DAY.replace(hour=10),
+        end=DAY.replace(hour=10, minute=30),
+        room="Off-Site Location",
+        score=1.0,
+        kind="side_event",
+    )
+    assert travel_minutes(a, side_event) == 10
+    assert required_gap(a, side_event).seconds == 25 * 60
     assert required_gap(a, talk("d", 10, 0, 30, room="Hyatt Regency | Level 4 | X")).seconds == 25 * 60
+
+
+def test_candidate_from_hit_converts_aware_times_to_venue_timezone():
+    candidate = candidate_from_hit(
+        {
+            "id": "side-event",
+            "title": "Side event",
+            "start": "2026-11-10T16:00:00Z",
+            "end": "2026-11-10T17:30:00+00:00",
+        }
+    )
+
+    assert candidate is not None
+    assert candidate.start == datetime(2026, 11, 10, 9, 0)
+    assert candidate.end == datetime(2026, 11, 10, 10, 30)
 
 
 def test_fits_respects_the_buffer():
@@ -54,9 +88,12 @@ def test_plan_day_adds_one_break_per_half_day():
 
 def test_plan_day_drops_the_weakest_talk_when_a_half_has_no_gap():
     # Back to back from 9:00 to 12:30 in the same room with exactly 15-minute gaps: no 30-minute gap exists.
-    cands = [talk(f"m{i}", 9 + (i * 45) // 60, (i * 45) % 60, 30, score=1.0 - i * 0.1) for i in range(5)]
+    cands = [talk("before", 8, 0, 30, score=0.01)] + [
+        talk(f"m{i}", 9 + (i * 45) // 60, (i * 45) % 60, 30, score=1.0 - i * 0.1) for i in range(5)
+    ]
     plan = plan_day(cands, day=DAY)
     assert plan.dropped_for_break == ["m4"]
+    assert "before" in [item.id for item in plan.talks]
     assert any(i.type == "break" and i.start < DAY.replace(hour=12, minute=30) for i in plan.items)
 
 
