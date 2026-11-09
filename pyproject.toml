@@ -1,0 +1,34 @@
+[project]
+name = "sidequest"
+version = "0.1.0"
+description = "A conference copilot for brains that cannot hold the whole schedule in their head."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "httpx>=0.27",
+  "elasticsearch>=9.0,<10",
+  "pyyaml>=6.0",
+  "pydantic>=2.7",
+  "sentence-transformers>=3.0",
+  "opentelemetry-distro>=0.48b0",
+  "opentelemetry-exporter-otlp>=1.27",
+  "opentelemetry-instrumentation-fastapi>=0.48b0",
+  "opentelemetry-instrumentation-httpx>=0.48b0",
+  "opentelemetry-instrumentation-logging>=0.48b0",
+  "mcp>=1.2",
+  "beautifulsoup4>=4.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sidequest"]
+
+[tool.ruff]
+line-length = 110
