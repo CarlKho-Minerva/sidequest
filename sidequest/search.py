@@ -27,13 +27,12 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from elasticsearch import Elasticsearch, helpers
-
-VENUE_TZ = ZoneInfo("America/Denver")
 from opentelemetry import trace
 
 tracer = trace.get_tracer(__name__)
 
 INDEX = "sidequest-items"
+VENUE_TZ = ZoneInfo("America/Denver")
 EMBED_DIM = 384
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
