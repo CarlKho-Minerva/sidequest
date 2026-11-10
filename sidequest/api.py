@@ -307,10 +307,14 @@ def api_phone_register(req: PhoneRegisterRequest) -> dict[str, Any]:
 
 @app.get("/api/phone/status/{task_id}")
 def api_phone_status(task_id: str) -> dict[str, Any]:
-    try:
-        return phone.status(task_id)
-    except phone.PhoneUnavailable as exc:
-        raise HTTPException(503, str(exc)) from exc
+    with tracer.start_as_current_span("phone.status") as span:
+        span.set_attribute("sidequest.task_id", task_id)
+        try:
+            out = phone.status(task_id)
+        except phone.PhoneUnavailable as exc:
+            raise HTTPException(503, str(exc)) from exc
+        span.set_attribute("sidequest.phone.state", str(out.get("state")))
+        return out
 
 
 @app.get("/")

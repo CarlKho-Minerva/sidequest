@@ -140,6 +140,7 @@ function render() {
          ${i.alternatives.length ? `<div class="alt">Clashes with ${esc(i.alternatives[0].title)} (${fmt(i.alternatives[0].start)}, ${esc(i.alternatives[0].room)}). This one scored higher.</div>` : ''}
        </div>`).join('');
 
+  const sideById = Object.fromEntries((p.side_events || []).map(e => [e.id, e]));
   $('#side').innerHTML = (p.side_events || []).map(e => `
     <div class="card" id="side-${esc(e.id)}">
       <div class="k">${new Date(e.start).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</div>
@@ -147,11 +148,15 @@ function render() {
       <div class="m">${esc(e.location || '')}</div>
       <div class="why">${esc(e.why || '')}</div>
       <div class="row" style="margin-top:10px">
-        <button class="ghost" onclick="registerOnPhone('${esc(e.id)}', ${JSON.stringify(e.title)}, ${JSON.stringify(e.url)})">Register from my phone</button>
+        <button class="ghost phoneBtn" data-id="${esc(e.id)}">Register from my phone</button>
         <a href="${esc(e.url)}" target="_blank" rel="noopener" class="m">Open on Luma</a>
       </div>
       <div class="m phoneStatus"></div>
     </div>`).join('') || '<div class="card m">No side events matched.</div>';
+  $('#side').querySelectorAll('.phoneBtn').forEach(b => {
+    const e = sideById[b.dataset.id];
+    if (e) b.addEventListener('click', () => registerOnPhone(e.id, e.title, e.url));
+  });
 }
 
 async function registerOnPhone(id, name, url) {
